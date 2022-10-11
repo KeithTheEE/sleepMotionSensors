@@ -68,6 +68,15 @@ if not isinstance(cur_time, type(None)):
     time_tuple = cur_time['time_tuple']
     r = set_time(time_tuple, time_request_made, request_elapse)
 
+myip = str(my_network._my_ip)[-3:]
+if myip == '104':
+    pixels[0] = (31, 119, 180)
+if myip == '118':
+    pixels[0] = (255, 127, 14)
+if myip == '203':
+    pixels[0] = (44, 160, 44)
+pixels.show()
+time.sleep(5)
 
 pixels[0] = (0,0,0)
 pixels.show()
@@ -109,7 +118,8 @@ while True:
     if len(x) > max_history_limit:
         x = x[history_trim_to_size:]
     if r.datetime[5] > 40:
-        print(sleep_times)
+        # if len(sleep_times) > 0:
+        #     print(sleep_times)
         sleep_times = []
         start_time = time.monotonic_ns() / 10**9
         if len(x)>0:
@@ -118,12 +128,10 @@ while True:
             temp_packet = {'ip':str(my_network._my_ip), 'packet':x[:packet_size]}
             
             packet = json.dumps(temp_packet)
-            print("Fake Sending Data")
-            # post_sensor_packet(self, sensor_packet, target)
-            #success = my_network.post_sensor_packet(packet, post_sensor_webpage)
+            success = my_network.post_sensor_packet(packet, post_sensor_webpage)
             success = True
             if success:
-                #print("Sent")
+                print("Sent")
                 if len(x)>packet_size:
                     x = x[packet_size:]
                 else: 
@@ -152,5 +160,5 @@ while True:
         sleep_times.append(sleep_time)
         if sleep_time > 0:
             time.sleep(sleep_time)  
-        else:
-            print("Warning", sleep_time)
+        # else:
+        #     print("Warning", sleep_time)
