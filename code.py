@@ -5,6 +5,7 @@ import time
 import board
 import busio
 import adafruit_mpu6050
+import microcontroller
 
 
 import rtc
@@ -31,7 +32,10 @@ pixels[0] = (180, 0, 255)
 pixels.show()
 
 
+def get_meta_data():
+    
 
+    return {}
 
 
 # Needed for qtpy
@@ -65,8 +69,22 @@ print(cur_time)
 if not isinstance(cur_time, type(None)):
     print("GOING TO SET TIME")
     # Only set time if the server query returned something
-    time_tuple = cur_time['time_tuple']
+    time_tuple = cur_time['utc_time_tuple']
     r = set_time(time_tuple, time_request_made, request_elapse)
+    # Setting up time based checks
+    last_hour = r.datetime.tm_hour
+    hours_since_reset = 0
+    print(r.datetime.tm_hour)
+    rtc_set = True
+else: 
+    # Setting up time based checks
+    print("Failed to set time")
+    r = rtc.RTC()
+    last_hour = r.datetime.tm_hour
+    hours_since_reset = 0
+    print(r.datetime.tm_hour)
+    rtc_set = False
+
 
 myip = str(my_network._my_ip)[-3:]
 if myip == '104':
@@ -75,6 +93,8 @@ if myip == '118':
     pixels[0] = (255, 127, 14)
 if myip == '203':
     pixels[0] = (44, 160, 44)
+if myip == '177': # this is the 'extra' sensor 
+    pixels[0] = (200, 10, 100)
 pixels.show()
 time.sleep(5)
 
@@ -116,12 +136,66 @@ sleep_times = []
 
 while True:
     if len(x) > max_history_limit:
-        x = x[history_trim_to_size:]
+        # Trim back the data to prevent memory error
+        x = x[-history_trim_to_size:]
     if r.datetime[5] > 40:
+        # Currently in Non-Sampling section of code
+        '''
+        What are all of the things I need to manage in this 20 span
+        - update rtc if needed
+        - Add index to to last minutes samples for simpler post processing
+        - get the temp of the board add to first packet of the minute
+        - DEBUGGING toggle led if sleep time was ever less than 0 AND datetime.seconds < 55
+        - Add a flag to the first packet if sleep time was ever less than 0
+        '''
+        # If index values haven't been added to x, add them
+
+        # If the above, get and add the temp to the 0th index as well
+
         # if len(sleep_times) > 0:
         #     print(sleep_times)
         sleep_times = []
         start_time = time.monotonic_ns() / 10**9
+
+
+
+        # #----------Internal Clock Reset----------# #
+        # Check if we need to resync the time
+        if last_hour != r.datetime.tm_hour:
+            hours_since_reset += 1
+        if (hours_since_reset > 16 and r.datetime.tm_hour >= 22) or not rtc_set: # UTC 
+            print("Attempting to ReSync Clock")
+            time_request_made = time.monotonic_ns()/10**9
+            cur_time = my_network.get_json("http://192.168.1.147:5000/api/current_time_since_epoch")
+            #print(cur_time)
+            request_elapse = time.monotonic_ns()/10**9 - time_request_made
+            #print(cur_time)
+            # If you can reach network, set time
+            if not isinstance(cur_time, type(None)):
+                #print("GOING TO SET TIME")
+                # Only set time if the server query returned something
+                time_tuple = cur_time['utc_time_tuple']
+                r = set_time(time_tuple, time_request_made, request_elapse)
+                hours_since_reset = 0
+                rtc_set = True
+
+
+        # #----------Check if Header is Built for latest Minute----------# #
+        '''
+        check if minute has been built/parsed with a header
+        if not
+            - get minute this minute refers to
+            - get micro temp
+            - get acc temp
+            - get sample counts
+            - reformat  
+        '''
+
+
+
+
+
+        # #----------Send off Data Packets----------# #
         if len(x)>0:
             print("Seconds:", r.datetime[5], " Packet Size Remaining:",len(x))
             #print(x[:10])
@@ -129,13 +203,18 @@ while True:
             
             packet = json.dumps(temp_packet)
             success = my_network.post_sensor_packet(packet, post_sensor_webpage)
-            success = True
             if success:
                 print("Sent")
                 if len(x)>packet_size:
                     x = x[packet_size:]
                 else: 
                     x = []
+                pixels[0] = (0, 0, 0)
+            else:
+                pixels[0] = (50, 0, 0)
+                #time.sleep(.1)
+            pixels.show()
+
             # Post the data
 
         # Sleep between no and 0.1 second adjusted for the time of the sensor reads
@@ -146,6 +225,7 @@ while True:
         if sleep_time > 0:
             time.sleep(sleep_time)  
     else:
+        # #----------Record Sensor Data----------# #
         start_time = time.monotonic_ns() / 10**9
         y = {}
         y['timestamp'] = time.mktime(rtc.RTC().datetime)
@@ -154,7 +234,7 @@ while True:
         y['Gyro'] = mpu.gyro
         #y['temp_c'] = mpu.temperature
         x.append(y)
-        # Sleep between no and 0.1 second adjusted for the time of the sensor reads
+        # Sleep between no and 0.2 second adjusted for the time of the sensor reads
         sleep_time = min(time_delay, max(0, time_delay-((time.monotonic_ns() / 10**9)-start_time)))
         #print("SLeeping", sleep_time)
         sleep_times.append(sleep_time)
